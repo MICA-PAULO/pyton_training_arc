@@ -24,7 +24,9 @@ def haal_order(menu):
                 else:
                     cart[item["menu_item"]] = {"item": item, "aantal": 1}
                 totaal += item["menu_price"]
-                print(f"{item['menu_item'].ljust(30)} {item['menu_price']:.2f} EUR")
+
+            for product, data in cart.items():
+                print(f"{product}: {data['aantal']}x {data['item']['menu_price']:.2f} EUR")
 
     print("\nJe bestelling:")
     for product, data in cart.items():
