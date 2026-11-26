@@ -77,6 +77,7 @@ class Fetcher:
         self.session.headers["User-Agent"] = USER_AGENT
         self._robots = {}
         self._laatste = 0.0
+        self.cookiemuur_gezien = False
         self.toestemmingsmap = toestemmingsmap
         if toestemmingsmap and toestemmingsmap.is_dir():
             for bestand in toestemmingsmap.glob("*.json"):
@@ -126,6 +127,7 @@ class Fetcher:
                 return r
             doel = urljoin(r.url, r.headers["location"])
             if _host(doel) != _host(url):
+                self.cookiemuur_gezien = True
                 raise Cookiemuur("{0.scheme}://{0.netloc}".format(urlsplit(url)), doel)
             r = self.session.get(doel, timeout=60, allow_redirects=False)
         raise WebsiteFout("te veel doorverwijzingen")
@@ -279,6 +281,16 @@ def testen(fetcher, adres):
     yield "sitemap", bool(kaarten), (", ".join(kaarten) + " (deze methode wordt gebruikt)") if kaarten else reden
     if kaarten:
         return
+    try:
+        yield from _test_zoekpagina(fetcher, adres)
+    except WebsiteFout as e:
+        yield "voorpagina en zoekbalk", False, str(e)
+    if fetcher.cookiemuur_gezien:
+        yield ("wat nu?", False, "deze site vraagt toestemming voor cookies. Start de scraper gewoon, zonder --test. "
+               "Hij vraagt dan of hij een browservenster mag openen waarin jij zelf op akkoord klikt.")
+
+
+def _test_zoekpagina(fetcher, adres):
     html, url = fetcher.html(adres + "/")
     soup = BeautifulSoup(html, "html.parser")
     feeds = [urljoin(url, l["href"]) for l in soup.find_all("link", type=re.compile("rss|atom"), href=True)]
