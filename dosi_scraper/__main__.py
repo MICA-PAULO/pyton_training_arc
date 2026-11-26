@@ -2,12 +2,11 @@
 
 import argparse
 import os
-import sys
 from urllib.parse import urlsplit
 
 import requests
 
-from . import analyse, config, export, wordpress
+from . import analyse, config, export, ui, wordpress
 from .fetch import Fetcher, RobotsVerbod
 
 
@@ -37,28 +36,37 @@ def main(argv=None):
         url = url.rstrip("/")
         bronnen[urlsplit(url).netloc] = url
     os.makedirs(args.uit, exist_ok=True)
+    stappen = len(bronnen) * len(jaren) * len(config.ZOEKTERMEN)
+    ui.kop(bronnen, jaren, args.uit, stappen, args.met_tekst)
     fetcher = Fetcher()
 
     arts = []
-    for bron, basis in bronnen.items():
-        print(f"Bron {bron} ({basis})")
-        try:
-            for a in wordpress.artikelen(fetcher, bron, basis, jaren):
-                analyse.label(a)
-                if not args.met_tekst:
-                    del a["tekst"]
-                arts.append(a)
-        except RobotsVerbod as e:
-            print(f"  Overgeslagen: robots.txt verbiedt {e} of is niet bereikbaar", file=sys.stderr)
-        except requests.RequestException as e:
-            print(f"  Overgeslagen: {bron} gaf een fout ({e}). Is het wel een WordPress-site?", file=sys.stderr)
+    v = ui.Voortgang(stappen)
+    try:
+        with v:
+            for bron, basis in bronnen.items():
+                v.bron(bron)
+                try:
+                    for a in wordpress.artikelen(fetcher, bron, basis, jaren, bezig=v.bezig, voortgang=v.klaar):
+                        analyse.label(a)
+                        if not args.met_tekst:
+                            del a["tekst"]
+                        arts.append(a)
+                        v.artikel(a)
+                except RobotsVerbod as e:
+                    v.waarschuwing(f"{bron} overgeslagen: robots.txt verbiedt {e} of is niet bereikbaar")
+                except requests.RequestException as e:
+                    v.waarschuwing(f"{bron} overgeslagen: {e}. Is het wel een WordPress-site?")
+    except KeyboardInterrupt:
+        ui.console.print("\n[yellow]Gestopt met Ctrl+C. Wat al binnen is wordt opgeslagen.[/]")
 
     arts.sort(key=lambda a: a["datum"])
     s = analyse.samenvatting(arts)
-    export.csv_schrijven(arts, os.path.join(args.uit, "artikelen.csv"))
-    export.jsonl_schrijven(arts, os.path.join(args.uit, "artikelen.jsonl"))
-    export.rapport_schrijven(s, bronnen, os.path.join(args.uit, "rapport.md"))
-    print(f"\nKlaar: {len(arts)} artikelen, {s['relevant']} relevant. Zie {args.uit}/rapport.md")
+    bestanden = [os.path.join(args.uit, n) for n in ("rapport.md", "artikelen.csv", "artikelen.jsonl")]
+    export.rapport_schrijven(s, bronnen, bestanden[0])
+    export.csv_schrijven(arts, bestanden[1])
+    export.jsonl_schrijven(arts, bestanden[2])
+    ui.overzicht(arts, s, bestanden, v.duur())
 
 
 if __name__ == "__main__":

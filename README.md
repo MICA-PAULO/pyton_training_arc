@@ -11,6 +11,7 @@ De scraper bouwt op bestaande onderdelen in plaats van alles zelf te maken:
 - **WordPress REST API** (`/wp-json/wp/v2/posts`). Veel Nederlandse nieuwssites draaien op WordPress. Deze officiële API geeft artikelen als nette JSON terug, met datum, titel, tekst en categorie (bij 112vdg.nl is dat de provincie). We hoeven dus geen HTML-layout te ontleden.
 - **requests** voor de HTTP-verzoeken en **BeautifulSoup** om de HTML in de artikeltekst om te zetten naar platte tekst. Dit zijn de modules uit ons verkennend onderzoek naar scrapers.
 - **urllib.robotparser** uit de standaardbibliotheek om robots.txt te controleren.
+- **rich** voor een overzichtelijke terminal: voortgangsbalk met percentage en resterende tijd, een live lijst van gevonden artikelen en een eindoverzicht.
 
 Stappen:
 
@@ -23,6 +24,8 @@ Stappen:
 ```bash
 pip install -r requirements.txt
 ```
+
+Op Windows werkt `pip` vaak niet in PowerShell. Gebruik dan `py -m pip install -r requirements.txt` en start de scraper met `py -m dosi_scraper`.
 
 ## Gebruiken
 
@@ -49,6 +52,15 @@ Volledige artikeltekst ook opslaan (standaard uit):
 ```bash
 python -m dosi_scraper --met-tekst
 ```
+
+## Wat je ziet tijdens het draaien
+
+1. **Startscherm** met bronnen, jaren, zoektermen, aantal zoekopdrachten, geschatte duur en de map waar de resultaten komen.
+2. **Live lijst** van relevante artikelen: datum, provincie, titel en de beschadigde objecten.
+3. **Voortgangsbalk** met percentage, resterende tijd en hoeveel artikelen gevonden en relevant zijn.
+4. **Eindoverzicht** met een tabel per jaarwisseling, de meest genoemde objecten, factoren en provincies, en de volledige paden naar de bestanden.
+
+Stoppen kan met Ctrl+C. Wat al binnen is wordt dan nog opgeslagen.
 
 ## Uitvoer
 

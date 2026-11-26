@@ -42,7 +42,7 @@ OBJECTEN = {
     "straatmeubilair": [r"\bbankje", r"zitbank", r"fietsenrek", r"paaltje", r"hekwerk"],
     "wegdek / bestrating": [r"wegdek", r"asfalt", r"bestrating", r"straatstenen"],
     "laadpaal": [r"laadpa"],
-    "camera": [r"camera"],
+    "camera (vernield)": [r"camera(?:paal|mast)", r"camera'?s?\s+(?:\w+\s+)?(?:vernield|beschadigd|kapot)"],
     "gebouw (school, winkel, bedrijf)": [r"school", r"bedrijfspand", r"winkel", r"\bkerk", r"gemeentehuis", r"supermarkt"],
     "groen / natuur": [r"\bboom\b", r"\bbomen\b", r"plantsoen", r"\bberm", r"natuurgebied", r"heide"],
 }

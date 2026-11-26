@@ -30,8 +30,13 @@ def venster(jaar):
     return date(jaar, m1, d1), date(jaar + 1, m2, d2)
 
 
-def artikelen(fetcher, bron, basis, jaren, zoektermen=config.ZOEKTERMEN, log=print):
-    """Geeft per artikel een dict terug. Dubbele artikelen worden overgeslagen."""
+def artikelen(fetcher, bron, basis, jaren, zoektermen=config.ZOEKTERMEN, bezig=None, voortgang=None):
+    """Geeft per artikel een dict terug. Dubbele artikelen worden overgeslagen.
+
+    `bezig` wordt voor elk verzoek aangeroepen met (jaar, term, pagina).
+    `voortgang` wordt na elke opgehaalde pagina aangeroepen met
+    (jaar, term, pagina, totaal_paginas, nieuwe_artikelen).
+    """
     cats = _categorieen(fetcher, basis)
     gezien = set()
     for jaar in jaren:
@@ -39,6 +44,8 @@ def artikelen(fetcher, bron, basis, jaren, zoektermen=config.ZOEKTERMEN, log=pri
         for term in zoektermen:
             pagina = 1
             while True:
+                if bezig:
+                    bezig(jaar, term, pagina)
                 r = fetcher.get(
                     f"{basis}/wp-json/wp/v2/posts",
                     params={
@@ -52,6 +59,7 @@ def artikelen(fetcher, bron, basis, jaren, zoektermen=config.ZOEKTERMEN, log=pri
                         "_fields": VELDEN,
                     },
                 )
+                totaal = max(1, int(r.headers.get("X-WP-TotalPages", 1)))
                 nieuw = 0
                 for p in r.json():
                     if p["id"] in gezien:
@@ -68,8 +76,8 @@ def artikelen(fetcher, bron, basis, jaren, zoektermen=config.ZOEKTERMEN, log=pri
                         "regio": [cats.get(c, str(c)) for c in p.get("categories", [])],
                         "tekst": _tekst(p["content"]["rendered"]),
                     }
-                totaal = max(1, int(r.headers.get("X-WP-TotalPages", 1)))
-                log(f"  {bron} {jaar}/{jaar + 1} '{term}' pagina {pagina}/{totaal}: {nieuw} nieuw")
+                if voortgang:
+                    voortgang(jaar, term, pagina, totaal, nieuw)
                 if pagina >= totaal:
                     break
                 pagina += 1
