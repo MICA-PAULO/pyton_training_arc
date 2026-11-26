@@ -1,21 +1,29 @@
 """Artikelen ophalen van nieuwswebsites, netjes en volgens robots.txt.
 
-Twee methodes, de scraper kiest zelf:
+Drie methodes, de scraper kiest zelf in deze volgorde:
 
 1. WordPress: via de officiële WordPress API (/wp-json). Snel en precies,
    want de API kan op datum filteren.
-2. Zoekpagina: voor alle andere sites. De scraper zoekt de zoekbalk op de
-   homepage (of gebruikt de zoekpagina uit instellingen.toml), bladert door de
-   resultaten en leest elk artikel met trafilatura, een bestaande scraper die
-   op vrijwel elke nieuwspagina tekst en datum herkent.
+2. Sitemap: bijna elke nieuwssite heeft een sitemap, een lijst van alle
+   artikelen met hun datum. De scraper leest alleen de artikelen binnen de
+   gekozen periodes. Werkt ook voor oudere jaren en heeft geen zoekbalk nodig.
+3. Zoekpagina: als laatste redmiddel. De scraper zoekt de zoekbalk op de
+   homepage (of gebruikt de zoekpagina uit instellingen.toml) en bladert door
+   de resultaten.
+
+Bij methode 2 en 3 leest trafilatura elk artikel: een bestaande scraper die op
+vrijwel elke nieuwspagina tekst en datum herkent.
 
 Juridisch kader: robots.txt wordt altijd gecontroleerd (ECLI:NL:RBAMS:2024:6563,
 artikel 15o Auteurswet). We stellen ons eerlijk voor met een eigen User-Agent.
 Blokkeert een site ons (firewall, cookiemuur), dan stoppen we bij die site.
 """
 
+import gzip
 import json
 import re
+import xml.etree.ElementTree as ET
+from datetime import date
 import time
 import urllib.robotparser
 from urllib.parse import quote_plus, urlencode, urljoin, urlsplit
@@ -29,6 +37,14 @@ TIJDELIJKE_FOUTEN = {429, 500, 502, 503, 504}
 ONZIN = "qxzvbnmq"  # zoekterm zonder resultaten, om menu-links te herkennen
 ZOEKVELD = re.compile(r"^(q|s|query|search|zoek|zoeken|zoekterm|keyword|keywords|term|text)$", re.I)
 VOLGENDE = re.compile(r"^\s*(volgende|next|meer|meer resultaten|oudere berichten|»|›|>|→)\s*", re.I)
+STANDAARD_SITEMAPS = ("/sitemap.xml", "/sitemap_index.xml", "/wp-sitemap.xml")
+URL_DATUM = re.compile(r"/(20\d\d)[/-](\d\d)[/-](\d\d)(?:[/-]|$)")
+PROVINCIES = {
+    "drenthe": "Drenthe", "flevoland": "Flevoland", "friesland": "Friesland", "fryslan": "Friesland",
+    "gelderland": "Gelderland", "groningen": "Groningen", "limburg": "Limburg", "noord-brabant": "Noord-Brabant",
+    "noord-holland": "Noord-Holland", "overijssel": "Overijssel", "utrecht": "Utrecht", "zeeland": "Zeeland",
+    "zuid-holland": "Zuid-Holland",
+}
 GEEN_ARTIKEL = re.compile(r"\.(jpe?g|png|gif|svg|webp|pdf|mp[34]|zip)$|^(mailto|tel|javascript):", re.I)
 
 
@@ -82,9 +98,7 @@ class Fetcher:
             rp, reden = urllib.robotparser.RobotFileParser(), None
             try:
                 self._wachten()
-                r = self.session.get(basis + "/robots.txt", timeout=30)
-                if _host(r.url) != _host(basis):
-                    raise Cookiemuur(basis, r.url)  # niet onthouden: na toestemming opnieuw proberen
+                r = self._zelfde_site(basis + "/robots.txt")  # cookiemuur: niet onthouden, na toestemming opnieuw
                 if r.status_code == 404:
                     rp.allow_all = True  # geen robots.txt = geen beperkingen
                 elif r.ok:
@@ -103,14 +117,25 @@ class Fetcher:
         if not rp.can_fetch(USER_AGENT, url):
             raise WebsiteFout(f"robots.txt staat {urlsplit(url).path or '/'} niet toe")
 
+    def _zelfde_site(self, url, params=None):
+        """Volgt doorverwijzingen alleen binnen dezelfde website. Een doorverwijzing naar
+        een ander domein (meestal een cookiemuur) volgen we niet."""
+        r = self.session.get(url, params=params, timeout=60, allow_redirects=False)
+        for _ in range(5):
+            if not r.is_redirect:
+                return r
+            doel = urljoin(r.url, r.headers["location"])
+            if _host(doel) != _host(url):
+                raise Cookiemuur("{0.scheme}://{0.netloc}".format(urlsplit(url)), doel)
+            r = self.session.get(doel, timeout=60, allow_redirects=False)
+        raise WebsiteFout("te veel doorverwijzingen")
+
     def ophalen(self, url, params=None, pogingen=4):
         self._controleer(url)
         for poging in range(pogingen):
             self._wachten()
             try:
-                r = self.session.get(url, params=params, timeout=60)
-                if _host(r.url) != _host(url):
-                    raise Cookiemuur("{0.scheme}://{0.netloc}".format(urlsplit(url)), r.url)
+                r = self._zelfde_site(url, params)
                 if r.status_code not in TIJDELIJKE_FOUTEN:
                     return r
                 fout = f"foutcode {r.status_code}"
@@ -119,6 +144,11 @@ class Fetcher:
             if poging < pogingen - 1:
                 time.sleep(2 ** (poging + 1))
         raise WebsiteFout(f"geen antwoord na {pogingen} pogingen ({fout})")
+
+    def sitemaps(self, url):
+        """De sitemaps die robots.txt noemt (kan leeg zijn)."""
+        self._controleer(url)
+        return self._robots["{0.scheme}://{0.netloc}".format(urlsplit(url))][0].site_maps() or []
 
     def json(self, url, params=None):
         for poging in range(3):
@@ -185,18 +215,26 @@ def _tekst(html):
 # ---------------------------------------------------------------- methode kiezen
 
 def methode(fetcher, site):
-    """('wordpress', None) of ('zoekpagina', sjabloon). WebsiteFout als het niet lukt."""
+    """('wordpress', None), ('sitemap', [sitemaps]) of ('zoekpagina', sjabloon). WebsiteFout als niets lukt."""
     if site.zoekpagina:
         return "zoekpagina", site.zoekpagina
+    cookiemuur = None
     try:
         fetcher.json(f"{site.adres}/wp-json/wp/v2/posts", {"per_page": 1, "_fields": "id"})
         return "wordpress", None
     except GeenWordPress:
         pass
+    except Cookiemuur as e:
+        cookiemuur = e  # misschien is de sitemap wel vrij toegankelijk
+    kaarten = _sitemaps_vinden(fetcher, site.adres)
+    if kaarten:
+        return "sitemap", kaarten
+    if cookiemuur:
+        raise cookiemuur
     html, url = fetcher.html(site.adres + "/")
     sjabloon = _zoekformulier(html, url)
     if not sjabloon:
-        raise WebsiteFout("geen WordPress en geen zoekbalk gevonden. Zoek op de website zelf naar 'vuurwerk', "
+        raise WebsiteFout("geen WordPress, geen sitemap en geen zoekbalk gevonden. Zoek op de website zelf naar 'vuurwerk', "
                           "kopieer het adres uit de adresbalk en zet het in instellingen.toml als zoekpagina, "
                           "met {zoekterm} op de plek van vuurwerk. Zie de README.")
     return "zoekpagina", sjabloon
@@ -221,20 +259,26 @@ def testen(fetcher, adres):
     """Controleert stap voor stap wat een website ons antwoordt. Geeft (stap, gelukt, uitleg)."""
     adres = adres.rstrip("/")
     try:
-        fetcher.ophalen(adres + "/")
-        yield "robots.txt en bereikbaarheid", True, "de website mag gescraped worden en antwoordt"
+        fetcher.ophalen(adres + "/robots.txt")
+        yield "robots.txt en bereikbaarheid", True, "de website antwoordt en robots.txt is gelezen"
     except WebsiteFout as e:
         yield "robots.txt en bereikbaarheid", False, str(e)
         return
-    rp = fetcher._robots["{0.scheme}://{0.netloc}".format(urlsplit(adres))][0]
-    kaarten = rp.site_maps() or []
-    yield "sitemaps in robots.txt", bool(kaarten), ", ".join(kaarten) or "geen"
     try:
         fetcher.json(f"{adres}/wp-json/wp/v2/posts", {"per_page": 1, "_fields": "id"})
         yield "WordPress", True, "ja, de snelle methode wordt gebruikt"
         return
     except (GeenWordPress, WebsiteFout):
-        yield "WordPress", False, "nee, de zoekpagina-methode wordt gebruikt"
+        yield "WordPress", False, "nee"
+    try:
+        kaarten = _sitemaps_vinden(fetcher, adres)
+    except WebsiteFout as e:
+        kaarten, reden = [], str(e)
+    else:
+        reden = "geen bruikbare sitemap gevonden"
+    yield "sitemap", bool(kaarten), (", ".join(kaarten) + " (deze methode wordt gebruikt)") if kaarten else reden
+    if kaarten:
+        return
     html, url = fetcher.html(adres + "/")
     soup = BeautifulSoup(html, "html.parser")
     feeds = [urljoin(url, l["href"]) for l in soup.find_all("link", type=re.compile("rss|atom"), href=True)]
@@ -314,6 +358,20 @@ def _lees(html, url):
     return json.loads(uit) if uit else None
 
 
+def _artikel(d, jaarwisseling, url):
+    """Eén artikel zoals trafilatura het las, in het vaste formaat van de scraper."""
+    categorieen = [c.strip() for c in (d.get("categories") or "").split(";") if c.strip()]
+    provincie = [PROVINCIES[deel] for deel in urlsplit(url).path.lower().split("/") if deel in PROVINCIES]
+    return {
+        "jaarwisseling": jaarwisseling,
+        "datum": d["date"][:10],
+        "titel": d.get("title") or "",
+        "url": url,
+        "categorieen": categorieen + provincie[:1],
+        "tekst": d.get("text") or "",
+    }
+
+
 def _zoekpagina(fetcher, site, sjabloon, inst, vp):
     host = _host(site.adres)
     vul = lambda term: sjabloon.replace("{zoekterm}", quote_plus(term))
@@ -356,26 +414,135 @@ def _zoekpagina(fetcher, site, sjabloon, inst, vp):
             continue
         jaarwisseling = inst.jaarwisseling(d.get("date"))
         if jaarwisseling:
-            yield {
-                "jaarwisseling": jaarwisseling,
-                "datum": d["date"][:10],
-                "titel": d.get("title") or "",
-                "url": echt,
-                "categorieen": [c.strip() for c in (d.get("categories") or "").split(";") if c.strip()],
-                "tekst": d.get("text") or "",
-            }
+            yield _artikel(d, jaarwisseling, echt)
+
+
+# ---------------------------------------------------------------- methode 3 hulp: sitemap
+
+def _datum(tekst):
+    try:
+        return date.fromisoformat((tekst or "")[:10])
+    except ValueError:
+        return None
+
+
+def _sitemap_lezen(fetcher, url):
+    """('index', [(adres, datum)]) of ('urls', [(adres, datum)]). None als het geen sitemap is."""
+    r = fetcher.ophalen(url)
+    if not r.ok:
+        return None
+    inhoud = gzip.decompress(r.content) if r.content[:2] == b"\x1f\x8b" else r.content
+    try:
+        root = ET.fromstring(inhoud)
+    except ET.ParseError:
+        return None
+    soort = {"sitemapindex": "index", "urlset": "urls"}.get(root.tag.rsplit("}", 1)[-1])
+    items = []
+    for el in root:
+        velden = {k.tag.rsplit("}", 1)[-1]: (k.text or "").strip() for k in el.iter()}
+        if velden.get("loc"):
+            # Publicatiedatum gaat voor: die van Google News, dan een datum in het adres, dan 'laatst gewijzigd'.
+            m = URL_DATUM.search(velden["loc"])
+            d = (_datum(velden.get("publication_date")) or (_datum("-".join(m.groups())) if m else None)
+                 or _datum(velden.get("lastmod")))
+            items.append((velden["loc"], d))
+    return (soort, items) if soort else None
+
+
+def _sitemaps_vinden(fetcher, adres):
+    """Bruikbare sitemaps van een website. Test ook één pagina, zodat een cookiemuur nu al opvalt."""
+    gevonden = []
+    for url in fetcher.sitemaps(adres) or [adres + p for p in STANDAARD_SITEMAPS]:
+        try:
+            gelezen = _sitemap_lezen(fetcher, url)
+            while gelezen and gelezen[0] == "index" and gelezen[1]:  # afdalen tot een lijst met pagina's
+                gelezen = _sitemap_lezen(fetcher, gelezen[1][0][0])
+        except Cookiemuur:
+            raise
+        except WebsiteFout:
+            continue
+        if not gelezen or not gelezen[1]:
+            continue
+        try:
+            fetcher.html(gelezen[1][0][0])
+        except Cookiemuur:
+            raise
+        except WebsiteFout:
+            pass  # die ene pagina mag niet of bestaat niet meer, de rest misschien wel
+        gevonden.append(url)
+        if fetcher.sitemaps(adres):
+            continue  # robots.txt noemt ze allemaal: alle gebruiken
+        break
+    return gevonden
+
+
+def _sitemap(fetcher, site, kaarten, inst, vp):
+    eerste_dag = min(inst.venster(j)[0] for j in inst.jaren)
+    per_jaar, wachtrij, gezien = {}, list(kaarten), set()
+    vp.stap(erbij=len(wachtrij) - 1, klaar=0)
+    while wachtrij:
+        url = wachtrij.pop(0)
+        vp.bezig(f"sitemap lezen: {urlsplit(url).path[-40:]}{'?' + urlsplit(url).query if urlsplit(url).query else ''}")
+        gelezen = None
+        if url not in gezien:
+            gezien.add(url)
+            try:
+                gelezen = _sitemap_lezen(fetcher, url)
+            except Cookiemuur:
+                raise
+            except WebsiteFout:
+                pass
+        vp.stap()
+        if not gelezen:
+            continue
+        soort, items = gelezen
+        if soort == "index":
+            # Sitemaps die voor de eerste periode voor het laatst gewijzigd zijn, kunnen niets bevatten.
+            nieuw = [loc for loc, d in items if not (d and d < eerste_dag)]
+            wachtrij += nieuw
+            vp.stap(erbij=len(nieuw), klaar=0)
+        else:
+            for loc, d in items:
+                jaarwisseling = d and inst.jaarwisseling(d.isoformat())
+                if jaarwisseling:
+                    per_jaar.setdefault(jaarwisseling, {})[loc] = d
+
+    lijst = [(loc, jw) for jw in sorted(per_jaar)
+             for loc, _ in sorted(per_jaar[jw].items(), key=lambda kv: kv[1])[: inst.max_artikelen]]
+    if not lijst:
+        raise WebsiteFout("de sitemap bevat geen pagina's binnen de gekozen periodes")
+    vp.melding(f"{len(lijst)} pagina's binnen de periodes, die worden nu gelezen "
+               f"(max {inst.max_artikelen} per jaarwisseling)")
+    vp.stap(erbij=len(lijst), klaar=0)
+    termen = [z.lower() for z in inst.zoektermen]
+    for loc, jaarwisseling in lijst:
+        vp.bezig(f"{jaarwisseling}  {urlsplit(loc).path[-45:]}")
+        try:
+            html, echt = fetcher.html(loc)
+        except Cookiemuur:
+            raise
+        except WebsiteFout:
+            vp.stap()
+            continue
+        d = _lees(html, echt)
+        vp.stap()
+        if d and any(t in f"{d.get('title')} {d.get('text')}".lower() for t in termen):
+            d["date"] = d.get("date") or per_jaar[jaarwisseling][loc].isoformat()
+            yield _artikel(d, jaarwisseling, echt)
 
 
 # ---------------------------------------------------------------- samen
 
 def stappen(soort, inst):
     """Eerste schatting van het aantal verzoeken, voor de voortgangsbalk."""
-    return len(inst.jaren) * len(inst.zoektermen) if soort == "wordpress" else len(inst.zoektermen) + 1
+    return {"wordpress": len(inst.jaren) * len(inst.zoektermen), "sitemap": 1}.get(soort, len(inst.zoektermen) + 1)
 
 
 def artikelen(fetcher, site, soort, sjabloon, inst, vp):
     """Geeft per artikel een dict. Dubbele artikelen worden overgeslagen."""
-    bron = _wordpress(fetcher, site, inst, vp) if soort == "wordpress" else _zoekpagina(fetcher, site, sjabloon, inst, vp)
+    bron = {"wordpress": lambda: _wordpress(fetcher, site, inst, vp),
+            "sitemap": lambda: _sitemap(fetcher, site, sjabloon, inst, vp),
+            "zoekpagina": lambda: _zoekpagina(fetcher, site, sjabloon, inst, vp)}[soort]()
     gezien = set()
     for a in bron:
         if a["url"] not in gezien:

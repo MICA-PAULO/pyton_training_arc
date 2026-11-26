@@ -39,7 +39,7 @@ def fout(tekst):
     console.print(Panel(escape(str(tekst)), title="[bold red]Er ging iets mis[/]", border_style="red", expand=False))
 
 
-METHODE = {"wordpress": "WordPress API", "zoekpagina": "zoekpagina + trafilatura"}
+METHODE = {"wordpress": "WordPress API", "sitemap": "sitemap + trafilatura", "zoekpagina": "zoekpagina + trafilatura"}
 
 
 class JaNee(Confirm):
@@ -82,7 +82,7 @@ def testresultaat(adres, regels):
 def kop(inst, plan, stappen):
     """plan: lijst van (website, methode, zoekadres, fout)."""
     schatting = stappen * (inst.wachttijd + 0.4)
-    if any(m == "zoekpagina" for _, m, _, _ in plan):
+    if any(m in ("sitemap", "zoekpagina") for _, m, _, _ in plan):
         extra = f", plus het lezen van gevonden artikelen (max {inst.max_artikelen} per website)"
     else:
         extra = ""
@@ -91,7 +91,8 @@ def kop(inst, plan, stappen):
         if fout:
             sites.add_row("[red]✗[/]", escape(site.naam), f"[red]wordt overgeslagen: {escape(fout)}[/]")
         else:
-            uitleg = METHODE[methode] + (f" [dim]({escape(zoekadres)})[/]" if zoekadres else "")
+            adres = zoekadres if isinstance(zoekadres, str) else _lijst(zoekadres or [])
+            uitleg = METHODE[methode] + (f" [dim]({escape(adres)})[/]" if adres else "")
             sites.add_row("[green]✓[/]", escape(site.naam), uitleg)
     jaren = [f"{j}/{j + 1}" for j in inst.jaren]
     t = Table.grid(padding=(0, 2))
@@ -164,6 +165,9 @@ class Voortgang:
                         escape(a["titel"]), "→ " + escape(_lijst(a[eerste]) or "-"))
             console.print(rij)
         self._bijwerken()
+
+    def melding(self, tekst):
+        console.print(f"  [dim]{escape(tekst)}[/]")
 
     def waarschuwing(self, tekst):
         console.print(f"  [bold red]✗[/] {escape(tekst)}")

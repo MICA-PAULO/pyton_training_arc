@@ -84,27 +84,32 @@ Dat werkt met elke nieuwssite. De scraper kiest zelf hoe:
 
 | Soort website | Hoe hij werkt |
 |---|---|
-| WordPress | Via de WordPress API. Snel, en zoekt precies binnen de periode. |
-| Alle andere | Hij zoekt de zoekbalk op de homepage, zoekt op elke zoekterm, bladert door de resultaten en leest elk artikel met **trafilatura**. Artikelen buiten de periode laat hij weg. |
+| 1. WordPress | Via de WordPress API. Snel, en zoekt precies binnen de periode. |
+| 2. Site met sitemap | Bijna elke nieuwssite heeft een sitemap: een lijst van alle artikelen met hun datum. Hij leest alleen de artikelen binnen de periodes, met **trafilatura**. Werkt ook voor oudere jaren. Zo werkt alarmeringen.nl. |
+| 3. Geen sitemap | Hij zoekt de zoekbalk op de homepage, zoekt op elke zoekterm, bladert door de resultaten en leest elk artikel met **trafilatura**. |
 
 Bij het starten zie je per website welke methode hij gebruikt, of waarom hij een site overslaat.
 
-**Vindt hij de zoekbalk niet?** Zoek dan op de website zelf naar *vuurwerk*. Kopieer het adres uit de adresbalk en zet `{zoekterm}` op de plek van *vuurwerk*:
+**De sitemap-methode is trager**, omdat hij elk artikel in de periode moet openen. Voor alarmeringen.nl zijn dat er ongeveer 100 per jaarwisseling, dus reken op een paar minuten per jaar. `max_artikelen_per_website` begrenst dit per jaarwisseling.
+
+**Vindt hij geen sitemap en geen zoekbalk?** Zoek dan op de website zelf naar *vuurwerk*. Kopieer het adres uit de adresbalk en zet `{zoekterm}` op de plek van *vuurwerk*:
 
 ```toml
 "omroep" = { adres = "https://www.voorbeeldnieuws.nl", zoekpagina = "https://www.voorbeeldnieuws.nl/zoeken?q={zoekterm}" }
 ```
 
-**Oudere jaren missen?** Zoekresultaten staan vaak nieuwste eerst. Zet dan `max_zoekpaginas` bij `[algemeen]` hoger.
+**Oudere jaren missen bij de zoekpagina-methode?** Zoekresultaten staan vaak nieuwste eerst. Zet dan `max_zoekpaginas` bij `[algemeen]` hoger.
 
 **Website overgeslagen?** De scraper zegt altijd waarom:
 - *robots.txt staat het niet toe*: de website wil niet gescraped worden. Dat respecteren we.
 - *blokkeert scrapers (foutcode 403)*: een firewall houdt de scraper tegen. Dat omzeilen we niet. Vanaf een ander netwerk, zoals thuis, kan het soms wel werken.
 - *vraagt eerst toestemming voor cookies*: zie hieronder.
 
-### Websites met een cookiemuur (zoals alarmeringen.nl)
+### Websites met een cookiemuur
 
-Sommige sites, zoals die van DPG Media, vragen eerst toestemming voor cookies. De scraper vraagt dan:
+Sommige sites, zoals die van DPG Media, vragen op de voorpagina eerst toestemming voor cookies. Vaak is dat geen probleem: de sitemap en de artikelen zelf zijn dan wel gewoon bereikbaar. Bij alarmeringen.nl is dat zo.
+
+Zit de cookiemuur ook op de artikelen, dan vraagt de scraper:
 
 ```
 Browservenster openen? [j/n] (j):
@@ -125,7 +130,7 @@ Werkt een site niet zoals je verwacht? Test hem los:
 py -m dosi_scraper --test https://alarmeringen.nl
 ```
 
-Je ziet dan stap voor stap wat de site antwoordt: robots.txt, WordPress of niet, de zoekbalk, de volgende-knop en of er een artikel met datum gelezen kan worden.
+Je ziet dan stap voor stap wat de site antwoordt: robots.txt, WordPress of niet, de sitemap, de zoekbalk, de volgende-knop en of er een artikel met datum gelezen kan worden.
 
 ### Iets anders aanpassen
 
@@ -175,7 +180,7 @@ Een artikel is **relevant** als het een woord uit `onderwerp` bevat (vuurwerk, j
 | `start.bat` | Startknop voor Windows |
 | `dosi_scraper/__main__.py` | Startpunt: zet de stappen hieronder achter elkaar |
 | `dosi_scraper/instellingen.py` | Leest en controleert `instellingen.toml`, zet zoekwoorden om naar zoekpatronen |
-| `dosi_scraper/websites.py` | Haalt artikelen op via de WordPress API of via de zoekpagina + trafilatura, met robots.txt-controle, wachttijd en cookietoestemming |
+| `dosi_scraper/websites.py` | Haalt artikelen op via de WordPress API, de sitemap of de zoekpagina, leest ze met trafilatura, met robots.txt-controle, wachttijd en cookietoestemming |
 | `dosi_scraper/analyse.py` | Labelt artikelen per deelvraag en telt alles |
 | `dosi_scraper/uitvoer.py` | Het scherm tijdens het draaien en de bestanden erna |
 

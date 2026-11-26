@@ -33,20 +33,26 @@ volledige_tekst_opslaan = false
 uitvoermap = "data"
 
 # Alleen voor websites zonder WordPress:
-# hoeveel pagina's met zoekresultaten per zoekterm, en hoeveel artikelen maximaal lezen.
-# Zoekresultaten staan vaak nieuwste eerst. Wil je oudere jaren, zet max_zoekpaginas hoger.
+# - max_artikelen_per_website: zoveel artikelen leest hij maximaal per website
+#   (bij de sitemap-methode: per jaarwisseling).
+# - max_zoekpaginas: alleen voor de zoekpagina-methode. Hoeveel pagina's met
+#   zoekresultaten per zoekterm. Zoekresultaten staan vaak nieuwste eerst.
 max_zoekpaginas = 10
 max_artikelen_per_website = 300
 
 
 # ---------------------------------------------------------------------
 #  Websites
-#  Naam = adres. Werkt met elke nieuwssite:
-#    - WordPress-sites gaan via de WordPress API (snel en precies).
-#    - Andere sites: de scraper zoekt zelf de zoekbalk op de homepage,
-#      zoekt op elke zoekterm en leest de gevonden artikelen.
+#  Naam = adres. Werkt met elke nieuwssite. De scraper kiest zelf:
+#    1. WordPress-sites gaan via de WordPress API (snel en precies).
+#    2. Andere sites via hun sitemap: de lijst van alle artikelen met datum.
+#       Hij leest alleen de artikelen binnen de gekozen periodes.
+#    3. Geen sitemap? Dan zoekt hij de zoekbalk op de homepage.
 #
-#  Vindt hij de zoekbalk niet? Zoek dan op de website zelf naar vuurwerk,
+#  Wil je eerst weten of een site werkt? Start dan:
+#    py -m dosi_scraper --test https://www.voorbeeld.nl
+#
+#  Vindt hij geen sitemap en geen zoekbalk? Zoek dan op de website zelf naar vuurwerk,
 #  kopieer het adres uit de adresbalk en zet {zoekterm} op de plek van vuurwerk:
 #    "voorbeeld" = { adres = "https://www.voorbeeld.nl", zoekpagina = "https://www.voorbeeld.nl/zoeken?q={zoekterm}" }
 #
