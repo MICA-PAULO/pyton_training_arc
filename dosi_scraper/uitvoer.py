@@ -9,6 +9,7 @@ from rich import box
 from rich.console import Console, Group
 from rich.markup import escape
 from rich.panel import Panel
+from rich.prompt import Confirm, InvalidResponse
 from rich.progress import (BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TaskProgressColumn,
                            TextColumn, TimeElapsedColumn, TimeRemainingColumn)
 from rich.table import Table
@@ -39,6 +40,43 @@ def fout(tekst):
 
 
 METHODE = {"wordpress": "WordPress API", "zoekpagina": "zoekpagina + trafilatura"}
+
+
+class JaNee(Confirm):
+    choices = ["j", "n"]
+    validate_error_message = "[red]Typ j (ja) of n (nee)[/]"
+
+    def process_response(self, value):
+        value = value.strip().lower()
+        if value in ("j", "ja", "y", "yes"):
+            return True
+        if value in ("n", "nee", "no"):
+            return False
+        raise InvalidResponse(self.validate_error_message)
+
+
+def vraag_toestemming(naam, fout):
+    console.print(Panel(
+        f"[bold]{escape(naam)}[/] {escape(str(fout))}.\n\n"
+        "Je kunt die toestemming zelf geven. Er opent dan een browservenster:\n"
+        "  1. Klik daar zelf op [bold]akkoord[/] of [bold]accepteren[/].\n"
+        "  2. Wacht tot de website zelf laadt. Het venster sluit vanzelf.\n\n"
+        "[dim]De toestemming wordt bewaard in de map .toestemming, zodat het maar één keer hoeft. "
+        "Robots.txt wordt daarna nog steeds gecontroleerd.[/]",
+        title="[bold yellow]Toestemming voor cookies[/]", border_style="yellow", expand=False))
+    return JaNee.ask("Browservenster openen?", default=True, console=console)
+
+
+def testresultaat(adres, regels):
+    t = Table(box=box.SIMPLE_HEAVY, show_header=False)
+    t.add_column(no_wrap=True)
+    t.add_column(style="bold", no_wrap=True)
+    t.add_column()
+    with console.status(f"{adres} testen..."):
+        for stap, gelukt, uitleg in regels:
+            t.add_row("[green]✓[/]" if gelukt else "[red]✗[/]", stap, escape(uitleg))
+    console.print(Panel(t, title=f"[bold]Test van {escape(adres)}[/]", border_style="cyan", expand=False))
+    console.print("[dim]Kopieer dit overzicht en stuur het door als je hulp nodig hebt.[/]")
 
 
 def kop(inst, plan, stappen):

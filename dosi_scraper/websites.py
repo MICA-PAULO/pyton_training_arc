@@ -40,19 +40,35 @@ class GeenWordPress(Exception):
     pass
 
 
+class Cookiemuur(WebsiteFout):
+    """De website stuurt door naar een toestemmingspagina voor cookies."""
+
+    def __init__(self, adres, doel):
+        self.adres = adres
+        super().__init__(f"de website vraagt eerst toestemming voor cookies (via {urlsplit(doel).netloc})")
+
+
 def _host(url):
-    return urlsplit(url).netloc.lower().removeprefix("www.")
+    return (urlsplit(url).hostname or "").removeprefix("www.")
 
 
 class Fetcher:
     """Haalt pagina's op met wachttijd, robots.txt-controle en nieuwe pogingen."""
 
-    def __init__(self, wachttijd):
+    def __init__(self, wachttijd, toestemmingsmap=None):
         self.wachttijd = wachttijd
         self.session = requests.Session()
         self.session.headers["User-Agent"] = USER_AGENT
         self._robots = {}
         self._laatste = 0.0
+        self.toestemmingsmap = toestemmingsmap
+        if toestemmingsmap and toestemmingsmap.is_dir():
+            for bestand in toestemmingsmap.glob("*.json"):
+                self.cookies_gebruiken(json.loads(bestand.read_text(encoding="utf-8")))
+
+    def cookies_gebruiken(self, cookies):
+        for c in cookies:
+            self.session.cookies.set(c["name"], c["value"], domain=c["domain"], path=c.get("path", "/"))
 
     def _wachten(self):
         wacht = self.wachttijd - (time.monotonic() - self._laatste)
@@ -68,9 +84,8 @@ class Fetcher:
                 self._wachten()
                 r = self.session.get(basis + "/robots.txt", timeout=30)
                 if _host(r.url) != _host(basis):
-                    reden = (f"de website stuurt door naar {urlsplit(r.url).netloc}, waarschijnlijk een cookiemuur. "
-                             "Automatisch toestemming geven doen we niet.")
-                elif r.status_code == 404:
+                    raise Cookiemuur(basis, r.url)  # niet onthouden: na toestemming opnieuw proberen
+                if r.status_code == 404:
                     rp.allow_all = True  # geen robots.txt = geen beperkingen
                 elif r.ok:
                     rp.parse(r.text.splitlines())
@@ -95,8 +110,7 @@ class Fetcher:
             try:
                 r = self.session.get(url, params=params, timeout=60)
                 if _host(r.url) != _host(url):
-                    raise WebsiteFout(f"de website stuurt door naar {urlsplit(r.url).netloc}, waarschijnlijk een "
-                                      "cookiemuur of inlogpagina. Automatisch toestemming geven doen we niet.")
+                    raise Cookiemuur("{0.scheme}://{0.netloc}".format(urlsplit(url)), r.url)
                 if r.status_code not in TIJDELIJKE_FOUTEN:
                     return r
                 fout = f"foutcode {r.status_code}"
@@ -124,6 +138,44 @@ class Fetcher:
         if not r.ok:
             raise WebsiteFout(f"{url} gaf foutcode {r.status_code}")
         return r.text, r.url
+
+
+def toestemming_geven(adres, toestemmingsmap):
+    """Opent een browservenster waarin de gebruiker zelf op 'akkoord' klikt.
+
+    De cookies van die toestemming worden lokaal bewaard, zodat het maar één keer hoeft.
+    We klikken nooit zelf op akkoord: dat doet de onderzoeker.
+    """
+    try:
+        from playwright.sync_api import Error, sync_playwright
+    except ImportError:
+        raise WebsiteFout("hiervoor is Playwright nodig. Installeer het met: py -m pip install playwright") from None
+    with sync_playwright() as p:
+        browser = None
+        for kanaal in ("msedge", "chrome", "chromium"):  # Edge staat op elke Windows-computer
+            try:
+                browser = p.chromium.launch(channel=kanaal, headless=False)
+                break
+            except Error:
+                continue
+        if not browser:
+            raise WebsiteFout("geen browser gevonden. Installeer er een met: py -m playwright install chromium")
+        pagina = browser.new_page()
+        pagina.goto(adres + "/")
+        try:
+            # Klaar zodra de gebruiker terug is op de website zelf (of het venster sluit).
+            pagina.wait_for_url(lambda u: _host(u) == _host(adres), timeout=5 * 60 * 1000)
+            pagina.wait_for_load_state()
+        except Error:
+            pass
+        cookies = pagina.context.cookies()
+        browser.close()
+    host = _host(adres)
+    if not any(host.endswith(c["domain"].lstrip(".").removeprefix("www.")) for c in cookies):
+        raise WebsiteFout("geen toestemming ontvangen. Klik in het venster op akkoord en wacht tot de website zelf laadt.")
+    toestemmingsmap.mkdir(parents=True, exist_ok=True)
+    (toestemmingsmap / f"{host}.json").write_text(json.dumps(cookies, indent=1), encoding="utf-8")
+    return cookies
 
 
 def _tekst(html):
@@ -163,6 +215,48 @@ def _zoekformulier(html, url):
         actie = urljoin(url, form.get("action") or url)
         return actie + ("&" if "?" in actie else "?") + urlencode(velden, safe="{}")
     return None
+
+
+def testen(fetcher, adres):
+    """Controleert stap voor stap wat een website ons antwoordt. Geeft (stap, gelukt, uitleg)."""
+    adres = adres.rstrip("/")
+    try:
+        fetcher.ophalen(adres + "/")
+        yield "robots.txt en bereikbaarheid", True, "de website mag gescraped worden en antwoordt"
+    except WebsiteFout as e:
+        yield "robots.txt en bereikbaarheid", False, str(e)
+        return
+    rp = fetcher._robots["{0.scheme}://{0.netloc}".format(urlsplit(adres))][0]
+    kaarten = rp.site_maps() or []
+    yield "sitemaps in robots.txt", bool(kaarten), ", ".join(kaarten) or "geen"
+    try:
+        fetcher.json(f"{adres}/wp-json/wp/v2/posts", {"per_page": 1, "_fields": "id"})
+        yield "WordPress", True, "ja, de snelle methode wordt gebruikt"
+        return
+    except (GeenWordPress, WebsiteFout):
+        yield "WordPress", False, "nee, de zoekpagina-methode wordt gebruikt"
+    html, url = fetcher.html(adres + "/")
+    soup = BeautifulSoup(html, "html.parser")
+    feeds = [urljoin(url, l["href"]) for l in soup.find_all("link", type=re.compile("rss|atom"), href=True)]
+    yield "RSS-feeds", bool(feeds), ", ".join(feeds) or "geen gevonden"
+    sjabloon = _zoekformulier(html, url)
+    yield "zoekbalk", bool(sjabloon), sjabloon or "niet gevonden in de HTML (misschien werkt hij met JavaScript)"
+    if not sjabloon:
+        return
+    html, url = fetcher.html(sjabloon.replace("{zoekterm}", "vuurwerk"))
+    links, soup = _links(html, url, _host(adres))
+    yield "zoeken op 'vuurwerk'", bool(links), f"{len(links)} links op de resultatenpagina"
+    yield "volgende pagina", bool(_volgende(soup, url)), _volgende(soup, url) or "geen knop gevonden"
+    for link in links[-5:]:
+        try:
+            d = _lees(*fetcher.html(link))
+        except WebsiteFout as e:
+            yield "artikel lezen", False, f"{link}: {e}"
+            continue
+        if d:
+            yield "artikel lezen", bool(d.get("date")), f"{d.get('date') or 'geen datum'} · {d.get('title')} ({link})"
+            return
+    yield "artikel lezen", False, "geen artikel kunnen lezen"
 
 
 # ---------------------------------------------------------------- methode 1: WordPress
