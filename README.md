@@ -76,10 +76,31 @@ Zet een regel bij `[websites]`:
 ```toml
 [websites]
 "112vdg" = "https://112vdg.nl"
+"alarmeringen.nl" = "https://alarmeringen.nl"
 "omroep" = "https://www.voorbeeldnieuws.nl"
 ```
 
-Dit werkt met nieuwssites die op **WordPress** draaien. Is een site geen WordPress, of staat robots.txt scrapen niet toe, dan slaat de scraper die site over en zegt hij waarom.
+Dat werkt met elke nieuwssite. De scraper kiest zelf hoe:
+
+| Soort website | Hoe hij werkt |
+|---|---|
+| WordPress | Via de WordPress API. Snel, en zoekt precies binnen de periode. |
+| Alle andere | Hij zoekt de zoekbalk op de homepage, zoekt op elke zoekterm, bladert door de resultaten en leest elk artikel met **trafilatura**. Artikelen buiten de periode laat hij weg. |
+
+Bij het starten zie je per website welke methode hij gebruikt, of waarom hij een site overslaat.
+
+**Vindt hij de zoekbalk niet?** Zoek dan op de website zelf naar *vuurwerk*. Kopieer het adres uit de adresbalk en zet `{zoekterm}` op de plek van *vuurwerk*:
+
+```toml
+"omroep" = { adres = "https://www.voorbeeldnieuws.nl", zoekpagina = "https://www.voorbeeldnieuws.nl/zoeken?q={zoekterm}" }
+```
+
+**Oudere jaren missen?** Zoekresultaten staan vaak nieuwste eerst. Zet dan `max_zoekpaginas` bij `[algemeen]` hoger.
+
+**Website overgeslagen?** De scraper zegt altijd waarom:
+- *robots.txt staat het niet toe*: de website wil niet gescraped worden. Dat respecteren we.
+- *blokkeert scrapers (foutcode 403)*: een firewall houdt de scraper tegen. Dat omzeilen we niet. Vanaf een ander netwerk, zoals thuis, kan het soms wel werken.
+- *stuurt door naar een cookiemuur*: de site wil eerst toestemming voor cookies. Automatisch toestemming geven doen we niet.
 
 ### Iets anders aanpassen
 
@@ -110,7 +131,7 @@ Een artikel is **relevant** als het een woord uit `onderwerp` bevat (vuurwerk, j
 - **robots.txt** wordt voor elke website gecontroleerd. Verbiedt robots.txt het, of is robots.txt niet bereikbaar, dan slaat de scraper de site over (ECLI:NL:RBAMS:2024:6563, artikel 15o Auteurswet).
 - **Belasting van de site**: minimaal 1 seconde tussen verzoeken en een herkenbare User-Agent.
 - **AVG**: standaard wordt de volledige tekst niet opgeslagen, alleen titel, link, labels en korte fragmenten. Nieuwsartikelen noemen soms namen. Gebruik die niet in het verslag en deel de map `data/` niet buiten de groep. Daarom staat `data/` in `.gitignore`.
-- **Firewalls**: alarmeringen.nl blokkeert scrapers. Die bron is bewust niet opgenomen. Een blokkade omzeilen past niet in ons juridisch kader.
+- **Geen omzeiling**: de scraper stelt zich eerlijk voor met een eigen User-Agent. Firewalls, cookiemuren en inlogpagina's omzeilen we niet. Dat past niet in ons juridisch kader. Een site die zo blokkeert wordt overgeslagen, met de reden erbij.
 
 ## 5. Beperkingen
 
@@ -128,10 +149,10 @@ Een artikel is **relevant** als het een woord uit `onderwerp` bevat (vuurwerk, j
 | `start.bat` | Startknop voor Windows |
 | `dosi_scraper/__main__.py` | Startpunt: zet de stappen hieronder achter elkaar |
 | `dosi_scraper/instellingen.py` | Leest en controleert `instellingen.toml`, zet zoekwoorden om naar zoekpatronen |
-| `dosi_scraper/websites.py` | Haalt artikelen op via de WordPress REST API, met robots.txt-controle en wachttijd |
+| `dosi_scraper/websites.py` | Haalt artikelen op via de WordPress API of via de zoekpagina + trafilatura, met robots.txt-controle en wachttijd |
 | `dosi_scraper/analyse.py` | Labelt artikelen per deelvraag en telt alles |
 | `dosi_scraper/uitvoer.py` | Het scherm tijdens het draaien en de bestanden erna |
 
 Er staat geen deelvraag of website in de code zelf. Alles loopt via de lijst in `instellingen.toml`, zodat elke deelvraag op dezelfde manier wordt verwerkt.
 
-Gebruikte bibliotheken: **requests** (HTTP), **BeautifulSoup** (HTML naar tekst), **rich** (voortgangsbalk en tabellen) en **tomllib** (instellingenbestand, standaard in Python 3.11+).
+Gebruikte bibliotheken: **requests** (HTTP), **BeautifulSoup** (HTML lezen), **trafilatura** (bestaande scraper die tekst en datum uit nieuwsartikelen haalt), **rich** (voortgangsbalk en tabellen) en **tomllib** (instellingenbestand, standaard in Python 3.11+).

@@ -36,6 +36,13 @@ def patroon(woorden):
 
 
 @dataclass
+class Website:
+    naam: str
+    adres: str
+    zoekpagina: str = None  # alleen nodig als automatisch zoeken niet lukt
+
+
+@dataclass
 class Deelvraag:
     sleutel: str
     vraag: str
@@ -49,6 +56,8 @@ class Instellingen:
     periode_van: tuple
     periode_tot: tuple
     wachttijd: float
+    max_paginas: int
+    max_artikelen: int
     tekst_opslaan: bool
     uitvoermap: Path
     websites: dict
@@ -64,6 +73,18 @@ class Instellingen:
         eind_jaar = jaar + 1 if self.periode_tot <= self.periode_van else jaar
         eind = date(eind_jaar, *self.periode_tot) + timedelta(days=1)
         return start, eind
+
+    def jaarwisseling(self, datum):
+        """'2024/2025' als de datum (JJJJ-MM-DD) in een van de periodes valt, anders None."""
+        try:
+            d = date.fromisoformat(str(datum)[:10])
+        except ValueError:
+            return None
+        for jaar in self.jaren:
+            start, eind = self.venster(jaar)
+            if start <= d < eind:
+                return f"{jaar}/{jaar + 1}"
+        return None
 
 
 def _sectie(data, naam):
@@ -103,6 +124,24 @@ def _dag(tekst, sleutel):
         raise InstellingenFout(f'[algemeen] {sleutel} = "{tekst}" moet dag-maand zijn, bv. "27-12".') from None
 
 
+def _adres(tekst, waar):
+    if not isinstance(tekst, str) or urlsplit(tekst).scheme not in ("http", "https"):
+        raise InstellingenFout(f"{waar} moet een adres zijn dat begint met https://")
+    return tekst.strip()
+
+
+def _website(naam, waarde):
+    waar = f'[websites] "{naam}"'
+    if isinstance(waarde, str):
+        return Website(naam, _adres(waarde, waar).rstrip("/"))
+    if not isinstance(waarde, dict):
+        raise InstellingenFout(f'{waar} moet een adres zijn, bv. "https://www.voorbeeld.nl"')
+    zoekpagina = waarde.get("zoekpagina")
+    if zoekpagina is not None and "{zoekterm}" not in _adres(zoekpagina, f"{waar} zoekpagina"):
+        raise InstellingenFout(f"{waar}: zet {{zoekterm}} in de zoekpagina op de plek van het zoekwoord.")
+    return Website(naam, _adres(waarde.get("adres"), f"{waar} adres").rstrip("/"), zoekpagina)
+
+
 def laden(pad=STANDAARD_PAD, jaren=None):
     pad = Path(pad).resolve()
     try:
@@ -117,10 +156,7 @@ def laden(pad=STANDAARD_PAD, jaren=None):
     alg = _sectie(data, "algemeen")
     zoek = _sectie(data, "zoeken")
 
-    websites = _sectie(data, "websites")
-    for naam, url in websites.items():
-        if not isinstance(url, str) or urlsplit(url).scheme not in ("http", "https"):
-            raise InstellingenFout(f'[websites] "{naam}" moet een adres zijn dat begint met https://')
+    websites = [_website(naam, waarde) for naam, waarde in _sectie(data, "websites").items()]
     if not websites:
         raise InstellingenFout("[websites] is leeg. Zet er minstens één website in.")
 
@@ -142,9 +178,11 @@ def laden(pad=STANDAARD_PAD, jaren=None):
         periode_van=_dag(alg.get("periode_van", "27-12"), "periode_van"),
         periode_tot=_dag(alg.get("periode_tot", "07-01"), "periode_tot"),
         wachttijd=max(1.0, float(alg.get("wachttijd", 1.5))),
+        max_paginas=int(alg.get("max_zoekpaginas", 10)),
+        max_artikelen=int(alg.get("max_artikelen_per_website", 300)),
         tekst_opslaan=bool(alg.get("volledige_tekst_opslaan", False)),
         uitvoermap=pad.parent / alg.get("uitvoermap", "data"),
-        websites={n: u.rstrip("/") for n, u in websites.items()},
+        websites=websites,
         zoektermen=_woorden(zoek, "zoektermen", "[zoeken]"),
         onderwerp=patroon(_woorden(zoek, "onderwerp", "[zoeken]")),
         schade=patroon(_woorden(zoek, "schade", "[zoeken]")),

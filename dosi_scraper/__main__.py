@@ -23,21 +23,31 @@ def main(argv=None):
         uitvoer.fout(e)
         return 1
 
-    stappen = len(inst.websites) * len(inst.jaren) * len(inst.zoektermen)
-    uitvoer.kop(inst, stappen)
     fetcher = websites.Fetcher(inst.wachttijd)
+    plan = []
+    with uitvoer.console.status("Websites controleren (robots.txt, WordPress of zoekbalk)..."):
+        for site in inst.websites:
+            try:
+                plan.append((site, *websites.methode(fetcher, site), None))
+            except websites.WebsiteFout as e:
+                plan.append((site, None, None, str(e)))
+    stappen = sum(websites.stappen(m, inst) for _, m, _, fout in plan if not fout)
+    uitvoer.kop(inst, plan, stappen)
+
     arts = []
     voortgang = uitvoer.Voortgang(inst, stappen)
     try:
         with voortgang:
-            for naam, adres in inst.websites.items():
-                voortgang.website(naam)
+            for site, methode, zoekadres, fout in plan:
+                if fout:
+                    continue
+                voortgang.website(site.naam)
                 try:
-                    for a in websites.artikelen(fetcher, naam, adres, inst, voortgang.bezig, voortgang.klaar):
+                    for a in websites.artikelen(fetcher, site, methode, zoekadres, inst, voortgang):
                         arts.append(analyse.label(a, inst))
                         voortgang.artikel(a)
                 except websites.WebsiteFout as e:
-                    voortgang.waarschuwing(f"{naam} overgeslagen: {e}")
+                    voortgang.waarschuwing(f"{site.naam} gestopt: {e}")
     except KeyboardInterrupt:
         uitvoer.console.print("\n[yellow]Gestopt met Ctrl+C. Wat al binnen is wordt opgeslagen.[/]")
 

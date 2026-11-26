@@ -32,16 +32,30 @@ volledige_tekst_opslaan = false
 # Map voor de resultaten.
 uitvoermap = "data"
 
+# Alleen voor websites zonder WordPress:
+# hoeveel pagina's met zoekresultaten per zoekterm, en hoeveel artikelen maximaal lezen.
+# Zoekresultaten staan vaak nieuwste eerst. Wil je oudere jaren, zet max_zoekpaginas hoger.
+max_zoekpaginas = 10
+max_artikelen_per_website = 300
+
 
 # ---------------------------------------------------------------------
 #  Websites
-#  Naam = adres. Werkt met nieuwssites die op WordPress draaien.
-#  Is een site geen WordPress, dan meldt de scraper dat netjes.
-#  Een website weghalen? Zet een # voor de regel.
+#  Naam = adres. Werkt met elke nieuwssite:
+#    - WordPress-sites gaan via de WordPress API (snel en precies).
+#    - Andere sites: de scraper zoekt zelf de zoekbalk op de homepage,
+#      zoekt op elke zoekterm en leest de gevonden artikelen.
+#
+#  Vindt hij de zoekbalk niet? Zoek dan op de website zelf naar vuurwerk,
+#  kopieer het adres uit de adresbalk en zet {zoekterm} op de plek van vuurwerk:
+#    "voorbeeld" = { adres = "https://www.voorbeeld.nl", zoekpagina = "https://www.voorbeeld.nl/zoeken?q={zoekterm}" }
+#
+#  Blokkeert een site scrapers of robots.txt, dan slaat de scraper hem
+#  over en zegt waarom. Een website weghalen? Zet een # voor de regel.
 # ---------------------------------------------------------------------
 [websites]
 "112vdg" = "https://112vdg.nl"
-# "voorbeeld" = "https://www.voorbeeldnieuws.nl"
+"alarmeringen.nl" = "https://alarmeringen.nl"
 
 
 # ---------------------------------------------------------------------

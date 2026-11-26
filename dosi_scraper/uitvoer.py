@@ -38,18 +38,33 @@ def fout(tekst):
     console.print(Panel(escape(str(tekst)), title="[bold red]Er ging iets mis[/]", border_style="red", expand=False))
 
 
-def kop(inst, stappen):
-    schatting = (stappen + 2 * len(inst.websites)) * (inst.wachttijd + 0.4)
+METHODE = {"wordpress": "WordPress API", "zoekpagina": "zoekpagina + trafilatura"}
+
+
+def kop(inst, plan, stappen):
+    """plan: lijst van (website, methode, zoekadres, fout)."""
+    schatting = stappen * (inst.wachttijd + 0.4)
+    if any(m == "zoekpagina" for _, m, _, _ in plan):
+        extra = f", plus het lezen van gevonden artikelen (max {inst.max_artikelen} per website)"
+    else:
+        extra = ""
+    sites = Table.grid(padding=(0, 1))
+    for site, methode, zoekadres, fout in plan:
+        if fout:
+            sites.add_row("[red]✗[/]", escape(site.naam), f"[red]wordt overgeslagen: {escape(fout)}[/]")
+        else:
+            uitleg = METHODE[methode] + (f" [dim]({escape(zoekadres)})[/]" if zoekadres else "")
+            sites.add_row("[green]✓[/]", escape(site.naam), uitleg)
     jaren = [f"{j}/{j + 1}" for j in inst.jaren]
     t = Table.grid(padding=(0, 2))
     t.add_column(style="bold cyan", no_wrap=True)
     t.add_column()
-    t.add_row("Websites", _lijst(f"{n} [dim]({u})[/]" for n, u in inst.websites.items()))
+    t.add_row("Websites", sites)
     t.add_row("Jaarwisselingen", jaren[0] if len(jaren) == 1 else f"{jaren[0]} t/m {jaren[-1]}  [dim]({len(jaren)} stuks)[/]")
     t.add_row("Periode per jaar", "{1:02d}-{0:02d} t/m {3:02d}-{2:02d}".format(*inst.periode_van, *inst.periode_tot))
     t.add_row("Zoektermen", _lijst(f"'{z}'" for z in inst.zoektermen))
     t.add_row("Deelvragen", "\n".join(f"• {escape(v)}" for _, v in secties(inst)))
-    t.add_row("Geschatte duur", f"ongeveer {_duur(schatting)}  [dim]({stappen} zoekopdrachten, {inst.wachttijd} sec pauze)[/]")
+    t.add_row("Geschatte duur", f"ongeveer {_duur(schatting)}{extra}  [dim]({inst.wachttijd} sec pauze per verzoek)[/]")
     t.add_row("Volledige tekst", "ja" if inst.tekst_opslaan else "nee [dim](AVG: alleen korte fragmenten)[/]")
     t.add_row("Resultaten in", str(inst.uitvoermap))
     console.print(Panel(t, title="[bold]DOSI-scraper[/]", subtitle="instellingen.toml", border_style="cyan", expand=False))
@@ -87,14 +102,14 @@ class Voortgang:
     def website(self, naam):
         console.print(f"\n[bold cyan]▶ {escape(naam)}[/]")
 
-    def bezig(self, jaar, term, pagina):
-        extra = f" p.{pagina}" if pagina > 1 else ""
-        self.progress.update(self.taak, description=f"{jaar}/{jaar + 1}  '{term}'{extra}")
+    def bezig(self, tekst):
+        self.progress.update(self.taak, description=escape(tekst))
 
-    def klaar(self, pagina, totaal):
-        if pagina == 1 and totaal > 1:  # meer pagina's dan verwacht
-            self.progress.update(self.taak, total=self.progress.tasks[0].total + totaal - 1)
-        self._bijwerken(advance=1)
+    def stap(self, erbij=0, klaar=1):
+        """Eén verzoek klaar. `erbij` maakt de balk langer als er meer werk blijkt te zijn."""
+        if erbij:
+            self.progress.update(self.taak, total=self.progress.tasks[0].total + erbij)
+        self._bijwerken(advance=klaar)
 
     def artikel(self, a):
         self.gevonden += 1
@@ -176,7 +191,7 @@ def opslaan(arts, inst, t):
     jaren = t["jaren"]
     delen = [
         "# DOSI-scraper rapport",
-        f"Gegenereerd op {datetime.now():%d-%m-%Y %H:%M}. Websites: {_lijst(inst.websites)}.",
+        f"Gegenereerd op {datetime.now():%d-%m-%Y %H:%M}. Websites: {_lijst(w.naam for w in inst.websites)}.",
         "Een telling betekent \"in hoeveel relevante artikelen wordt het genoemd\", niet \"hoeveel incidenten\". "
         "Controleer altijd een steekproef handmatig.",
         "## Artikelen per jaarwisseling",
