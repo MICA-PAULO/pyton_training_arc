@@ -1,90 +1,69 @@
-"""Labelt artikelen per deelvraag met eenvoudige zoekwoorden.
+"""Labelt artikelen en telt per deelvraag. Alle deelvragen komen uit instellingen.toml.
 
-Dit is een hulpmiddel en geen vervanging voor handmatige beoordeling. Controleer
-altijd een steekproef van de artikelen voordat je conclusies trekt.
+De labels komen uit zoekwoorden. Een telling betekent "in hoeveel artikelen wordt
+het genoemd", niet "hoeveel incidenten waren er". Controleer altijd een steekproef.
 """
 
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 
-from . import config
-
-GEEN_REGIO = {"Uitgelicht", "Provincies", "Binnenland", "Buitenland", "Overig"}
+REGIO = ("regio", "In welke gebieden is de meeste schade? (categorie op de website)")
 _ZIN = re.compile(r"(?<=[.!?])\s+")
+_BEDRAG = re.compile(r"(?:€\s?(?P<a>\d[\d.,]*)\s*(?P<ma>miljoen|duizend)?)"
+                     r"|(?:(?P<b>\d[\d.,]*)\s*(?P<mb>miljoen|duizend)?\s*euro)")
 
 
-def _compileer(groepen):
-    return {naam: re.compile("|".join(patronen)) for naam, patronen in groepen.items()}
+def secties(inst):
+    """(kolomnaam, vraag) voor elke deelvraag plus de regio. Eén lijst voor rapport, CSV en scherm."""
+    return [(d.sleutel, d.vraag) for d in inst.deelvragen] + [REGIO]
 
 
-_OBJ = _compileer(config.OBJECTEN)
-_KOST = _compileer(config.KOSTENSOORT)
-_FACT = _compileer(config.FACTOREN)
-_PREV = _compileer(config.PREVENTIE)
-_JW = re.compile("|".join(config.JAARWISSELING))
-_BEDRAG = re.compile(config.BEDRAG_REGEX)
-_SCHADE = re.compile("|".join(config.KOSTENSOORT["reparatie / herstel"] + config.KOSTENSOORT["schoonmaak"]))
-
-
-def _treffers(groepen, tekst):
-    return [naam for naam, rx in groepen.items() if rx.search(tekst)]
-
-
-def _getal(s, mult):
-    s = s.strip(".,")
-    # Nederlandse notatie: 1.250.000 of 1,2
-    if "," in s:
-        s = s.replace(".", "").replace(",", ".")
-    elif s.count(".") >= 1 and len(s.split(".")[-1]) == 3:
-        s = s.replace(".", "")
+def _bedrag(getal, factor):
+    getal = getal.strip(".,")
+    if "," in getal:  # 1.250,50 of 1,2 miljoen
+        getal = getal.replace(".", "").replace(",", ".")
+    elif "." in getal and len(getal.split(".")[-1]) == 3:  # 15.000
+        getal = getal.replace(".", "")
     try:
-        w = float(s)
+        return float(getal) * {"miljoen": 1_000_000, "duizend": 1_000}.get(factor, 1)
     except ValueError:
         return None
-    return w * {"miljoen": 1_000_000, "duizend": 1_000}.get(mult or "", 1)
 
 
 def bedragen(tekst):
-    uit = []
-    for m in _BEDRAG.finditer(tekst):
-        getal = m.group("a") or m.group("b")
-        mult = m.group("ma") or m.group("mb")
-        w = _getal(getal, mult)
-        if w:
-            uit.append(w)
-    return uit
+    gevonden = (_bedrag(m["a"] or m["b"], m["ma"] or m["mb"]) for m in _BEDRAG.finditer(tekst))
+    return [b for b in gevonden if b]
 
 
-def label(art, max_fragmenten=3):
-    t = f"{art['titel']}. {art['tekst']}".lower()
-    zinnen = _ZIN.split(f"{art['titel']}. {art['tekst']}")
-    art["over_jaarwisseling"] = bool(_JW.search(t))
-    art["provincie"] = [r for r in art["regio"] if r not in GEEN_REGIO]
-    art["objecten"] = _treffers(_OBJ, t)
-    art["kostensoort"] = _treffers(_KOST, t)
-    art["factoren"] = _treffers(_FACT, t)
-    art["preventie"] = _treffers(_PREV, t)
-    art["bedragen_eur"] = bedragen(t)
-    art["materiele_schade"] = bool(_SCHADE.search(t)) or bool(art["objecten"] and "brand" in art["factoren"])
-    art["fragmenten"] = [z for z in zinnen if _SCHADE.search(z.lower())][:max_fragmenten]
+def label(art, inst):
+    """Voegt per deelvraag de gevonden categorieën toe aan het artikel."""
+    tekst = f"{art['titel']}. {art['tekst']}"
+    laag = tekst.lower()
+    art["relevant"] = bool(inst.onderwerp.search(laag) and inst.schade.search(laag))
+    for d in inst.deelvragen:
+        art[d.sleutel] = [naam for naam, rx in d.categorieen.items() if rx.search(laag)]
+    art["regio"] = [c for c in art["categorieen"] if c not in inst.geen_regio]
+    art["bedragen_eur"] = bedragen(laag)
+    art["fragmenten"] = [z for z in _ZIN.split(tekst) if inst.schade.search(z.lower())][:3]
+    if not inst.tekst_opslaan:
+        del art["tekst"]
     return art
 
 
-def samenvatting(arts):
-    rel = [a for a in arts if a["over_jaarwisseling"] and a["materiele_schade"]]
-    tel = lambda veld: Counter(x for a in rel for x in a[veld])
+def tellen(arts, inst):
+    """Alle tellingen die het rapport en het eindscherm nodig hebben."""
+    relevant = [a for a in arts if a["relevant"]]
+    per_sectie = {}
+    for sleutel, _ in secties(inst):
+        t = defaultdict(Counter)
+        for a in relevant:
+            for cat in a[sleutel]:
+                t[cat][a["jaarwisseling"]] += 1
+        per_sectie[sleutel] = sorted(t.items(), key=lambda kv: -sum(kv[1].values()))
     return {
-        "totaal_artikelen": len(arts),
-        "relevant": len(rel),
-        "per_jaarwisseling": Counter(a["jaarwisseling"] for a in rel),
-        "objecten": tel("objecten"),
-        "kostensoort": tel("kostensoort"),
-        "factoren": tel("factoren"),
-        "preventie": tel("preventie"),
-        "provincie": tel("provincie"),
-        "objecten_per_jaar": {
-            j: Counter(x for a in rel if a["jaarwisseling"] == j for x in a["objecten"])
-            for j in sorted({a["jaarwisseling"] for a in rel})
-        },
-        "bedragen": [(a["jaarwisseling"], b, a["titel"], a["url"]) for a in rel for b in a["bedragen_eur"]],
+        "jaren": sorted({a["jaarwisseling"] for a in arts}),
+        "gevonden": Counter(a["jaarwisseling"] for a in arts),
+        "relevant": Counter(a["jaarwisseling"] for a in relevant),
+        "per_sectie": per_sectie,
+        "bedragen": sorted((a["jaarwisseling"], b, a["titel"], a["url"]) for a in relevant for b in a["bedragen_eur"]),
     }

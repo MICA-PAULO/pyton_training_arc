@@ -4,87 +4,134 @@ Web scraper voor het DOSI-project van groep 6 (2026-2027). De scraper verzamelt 
 
 **Onderzoeksvraag:** Waar bestaat de materiële schade uit bij herstelwerkzaamheden na oudejaarsavond?
 
-## Hoe het werkt
+Je hoeft niet te kunnen programmeren. Alles wat je wilt aanpassen staat in **één bestand: `instellingen.toml`**.
 
-De scraper bouwt op bestaande onderdelen in plaats van alles zelf te maken:
+---
 
-- **WordPress REST API** (`/wp-json/wp/v2/posts`). Veel Nederlandse nieuwssites draaien op WordPress. Deze officiële API geeft artikelen als nette JSON terug, met datum, titel, tekst en categorie (bij 112vdg.nl is dat de provincie). We hoeven dus geen HTML-layout te ontleden.
-- **requests** voor de HTTP-verzoeken en **BeautifulSoup** om de HTML in de artikeltekst om te zetten naar platte tekst. Dit zijn de modules uit ons verkennend onderzoek naar scrapers.
-- **urllib.robotparser** uit de standaardbibliotheek om robots.txt te controleren.
-- **rich** voor een overzichtelijke terminal: voortgangsbalk met percentage en resterende tijd, een live lijst van gevonden artikelen en een eindoverzicht.
+## 1. Starten
 
-Stappen:
+**Windows:** dubbelklik op **`start.bat`**. De eerste keer installeert hij zelf wat nodig is.
 
-1. Per jaarwisseling (27 december tot en met 7 januari) zoekt de scraper op `vuurwerk`, `jaarwisseling`, `oudejaarsnacht`, `oud en nieuw` en `nieuwjaarsnacht`.
-2. Elk artikel krijgt labels op basis van zoekwoorden: beschadigde objecten, schoonmaak of reparatie, factoren, preventie door hulpdiensten, provincie en genoemde bedragen.
-3. De resultaten komen in de map `data/`.
+Werkt dat niet? Dan staat Python nog niet op je computer. Installeer het via https://www.python.org/downloads/ en vink tijdens de installatie **"Add python.exe to PATH"** aan.
 
-## Installeren
+**Via de terminal** (PowerShell, PyCharm of VS Code), vanuit deze map:
 
 ```bash
-pip install -r requirements.txt
+py -m pip install -r requirements.txt
+```
+```bash
+py -m dosi_scraper
 ```
 
-Op Windows werkt `pip` vaak niet in PowerShell. Gebruik dan `py -m pip install -r requirements.txt` en start de scraper met `py -m dosi_scraper`.
+Op Mac of Linux gebruik je `python3` in plaats van `py`.
 
-## Gebruiken
-
-Alle jaarwisselingen van 2020/2021 tot en met 2025/2026:
+Snel testen met één jaar, zonder het instellingenbestand aan te passen:
 
 ```bash
-python -m dosi_scraper
+py -m dosi_scraper --jaren 2024
 ```
 
-Alleen bepaalde jaren (het jaartal is het jaar van oudejaarsavond):
+Stoppen kan altijd met **Ctrl+C**. Wat al binnen is wordt dan nog opgeslagen.
 
-```bash
-python -m dosi_scraper --jaren 2023,2024
+---
+
+## 2. Aanpassen in `instellingen.toml`
+
+Open `instellingen.toml` met Kladblok, VS Code of PyCharm. Regels met een `#` ervoor zijn uitleg.
+
+### Zoekwoorden schrijven
+
+| Je schrijft | Hij vindt |
+|---|---|
+| `"brand"` | alleen het losse woord *brand* (niet *brandweer*) |
+| `"prullenba*"` | alles dat begint met *prullenba*: prullenbak, prullenbakken |
+| `"*camera"` | alles dat eindigt op *camera*: deurbelcamera |
+| `"*vuurwerk*"` | *vuurwerk* overal in een woord: vuurwerkbom, nitraatvuurwerk |
+| `"in brand"` | precies deze woorden achter elkaar |
+
+Hoofdletters maken niet uit.
+
+### Een deelvraag toevoegen
+
+Kopieer dit blok onderaan in het bestand en pas het aan:
+
+```toml
+[deelvragen.herstelwerk]
+vraag = "Welke herstelwerkzaamheden zijn er nodig na oudejaarsavond?"
+"schoonmaken straat" = ["veegwagen*", "*vuurwerkafval*", "opruim*"]
+"glas vervangen" = ["ruit", "ruiten", "glaszetter*"]
+"brand blussen" = ["geblust", "blussen", "brandweer"]
 ```
 
-Een extra WordPress-nieuwssite toevoegen:
+- `herstelwerk` is een korte naam zonder spaties. Dat wordt de kolomnaam in Excel.
+- `vraag` is de deelvraag zoals die in het rapport komt.
+- Elke regel daaronder is een categorie met de zoekwoorden die erbij horen.
 
-```bash
-python -m dosi_scraper --wp https://www.voorbeeldnieuws.nl
+Meer hoef je niet te doen. De nieuwe deelvraag verschijnt vanzelf in het startscherm, in Excel, in het rapport en in het eindoverzicht.
+
+### Een website toevoegen
+
+Zet een regel bij `[websites]`:
+
+```toml
+[websites]
+"112vdg" = "https://112vdg.nl"
+"omroep" = "https://www.voorbeeldnieuws.nl"
 ```
 
-Volledige artikeltekst ook opslaan (standaard uit):
+Dit werkt met nieuwssites die op **WordPress** draaien. Is een site geen WordPress, of staat robots.txt scrapen niet toe, dan slaat de scraper die site over en zegt hij waarom.
 
-```bash
-python -m dosi_scraper --met-tekst
-```
+### Iets anders aanpassen
 
-## Wat je ziet tijdens het draaien
+Jaren, periode, wachttijd en de map voor de resultaten staan bovenaan bij `[algemeen]`. Welke woorden een artikel "relevant" maken staat bij `[zoeken]`.
 
-1. **Startscherm** met bronnen, jaren, zoektermen, aantal zoekopdrachten, geschatte duur en de map waar de resultaten komen.
-2. **Live lijst** van relevante artikelen: datum, provincie, titel en de beschadigde objecten.
-3. **Voortgangsbalk** met percentage, resterende tijd en hoeveel artikelen gevonden en relevant zijn.
-4. **Eindoverzicht** met een tabel per jaarwisseling, de meest genoemde objecten, factoren en provincies, en de volledige paden naar de bestanden.
+**Typfout gemaakt?** De scraper zegt op welke regel het misgaat. Meestal is het een vergeten aanhalingsteken `"` of komma.
 
-Stoppen kan met Ctrl+C. Wat al binnen is wordt dan nog opgeslagen.
+---
 
-## Uitvoer
+## 3. Resultaten
+
+Na afloop staan in de map `data/`:
 
 | Bestand | Inhoud |
 |---|---|
-| `data/rapport.md` | Tabellen per deelvraag. Begin hier. |
-| `data/artikelen.csv` | Eén rij per artikel met alle labels. Opent in Excel (puntkomma als scheidingsteken). |
-| `data/artikelen.jsonl` | Dezelfde gegevens als JSON, handig voor verdere analyse in Python of pandas. |
+| `rapport.md` | Per deelvraag een tabel met tellingen per jaarwisseling. **Begin hier.** |
+| `artikelen.csv` | Eén rij per artikel met alle labels. Opent in Excel. |
+| `artikelen.jsonl` | Dezelfde gegevens, voor verdere analyse in Python. |
 
-Kolommen `over_jaarwisseling` en `materiele_schade` geven aan of een artikel meetelt in het rapport. De kolom `fragmenten` bevat de zinnen waarin schade genoemd wordt, zodat je snel kunt controleren of het label klopt.
+In de kolom `fragmenten` staan de zinnen waarop de labels gebaseerd zijn. Zo kun je snel nakijken of een label klopt.
 
-## Zoekwoorden aanpassen
+Een artikel is **relevant** als het een woord uit `onderwerp` bevat (vuurwerk, jaarwisseling) **en** een woord uit `schade` (vernield, beschadigd, schoonmaak).
 
-Alle zoekwoorden staan in `dosi_scraper/config.py`. Wil je een object toevoegen, zoals "fietsenstalling", zet het dan in `OBJECTEN`. Het zijn reguliere expressies op kleine letters.
+---
 
-## Juridisch kader
+## 4. Juridisch kader
 
-- **robots.txt**: elke URL wordt eerst gecontroleerd. Verbiedt robots.txt de URL, of is robots.txt niet bereikbaar, dan slaat de scraper de bron over (zie ECLI:NL:RBAMS:2024:6563 en artikel 15o Auteurswet).
-- **Belasting van de site**: minimaal 1,5 seconde tussen verzoeken en een herkenbare User-Agent.
+- **robots.txt** wordt voor elke website gecontroleerd. Verbiedt robots.txt het, of is robots.txt niet bereikbaar, dan slaat de scraper de site over (ECLI:NL:RBAMS:2024:6563, artikel 15o Auteurswet).
+- **Belasting van de site**: minimaal 1 seconde tussen verzoeken en een herkenbare User-Agent.
 - **AVG**: standaard wordt de volledige tekst niet opgeslagen, alleen titel, link, labels en korte fragmenten. Nieuwsartikelen noemen soms namen. Gebruik die niet in het verslag en deel de map `data/` niet buiten de groep. Daarom staat `data/` in `.gitignore`.
-- **Firewalls**: alarmeringen.nl blokkeert scrapers met een firewall. Die bron is bewust niet opgenomen. Een blokkade omzeilen past niet binnen ons juridisch kader, en de bron is in de bronnenmatrix al als onbetrouwbaar beoordeeld.
+- **Firewalls**: alarmeringen.nl blokkeert scrapers. Die bron is bewust niet opgenomen. Een blokkade omzeilen past niet in ons juridisch kader.
 
-## Beperkingen
+## 5. Beperkingen
 
-- De labels komen uit zoekwoorden. Een telling in het rapport betekent "aantal artikelen waarin het genoemd wordt", niet "aantal incidenten".
-- 112vdg.nl schrijft vooral over letsel en incidenten, minder over herstelkosten. Voor de deelvragen over kosten zijn gemeentelijke bronnen en verzekeraars (bijvoorbeeld het Verbond van Verzekeraars) waarschijnlijk beter.
-- Een bedrag in een artikel kan ook een boete of buit zijn. Controleer dit altijd in het artikel.
+- De labels komen uit zoekwoorden. Een telling betekent "in hoeveel artikelen wordt het genoemd", niet "hoeveel incidenten waren er".
+- 112vdg.nl schrijft vooral over letsel en incidenten, minder over herstelkosten. Voor de vragen over kosten zijn gemeenten en het Verbond van Verzekeraars waarschijnlijk betere bronnen.
+- Een bedrag in een artikel kan ook een boete of buit zijn. Controleer dit in het artikel.
+
+---
+
+## Voor wie de code wil lezen
+
+| Bestand | Wat het doet |
+|---|---|
+| `instellingen.toml` | Alle instellingen, websites, deelvragen en zoekwoorden |
+| `start.bat` | Startknop voor Windows |
+| `dosi_scraper/__main__.py` | Startpunt: zet de stappen hieronder achter elkaar |
+| `dosi_scraper/instellingen.py` | Leest en controleert `instellingen.toml`, zet zoekwoorden om naar zoekpatronen |
+| `dosi_scraper/websites.py` | Haalt artikelen op via de WordPress REST API, met robots.txt-controle en wachttijd |
+| `dosi_scraper/analyse.py` | Labelt artikelen per deelvraag en telt alles |
+| `dosi_scraper/uitvoer.py` | Het scherm tijdens het draaien en de bestanden erna |
+
+Er staat geen deelvraag of website in de code zelf. Alles loopt via de lijst in `instellingen.toml`, zodat elke deelvraag op dezelfde manier wordt verwerkt.
+
+Gebruikte bibliotheken: **requests** (HTTP), **BeautifulSoup** (HTML naar tekst), **rich** (voortgangsbalk en tabellen) en **tomllib** (instellingenbestand, standaard in Python 3.11+).

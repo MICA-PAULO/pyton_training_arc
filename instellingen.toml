@@ -1,0 +1,115 @@
+# =====================================================================
+#  DOSI-scraper: instellingen
+#
+#  Dit is het enige bestand dat je hoeft aan te passen.
+#  Regels die beginnen met # zijn uitleg en doen niets.
+#
+#  Zoekwoorden schrijven:
+#    "brand"        vindt alleen het losse woord brand
+#    "prullenba*"   vindt alles dat begint met prullenba (prullenbak, prullenbakken)
+#    "*camera"      vindt alles dat eindigt op camera (deurbelcamera)
+#    "*vuurwerk*"   vindt vuurwerk overal in een woord (vuurwerkbom, nitraatvuurwerk)
+#    "in brand"     vindt precies deze woorden achter elkaar
+#  Hoofdletters maken niet uit.
+# =====================================================================
+
+
+[algemeen]
+# Welke jaarwisselingen? Het jaartal is het jaar van oudejaarsavond.
+# Voorbeelden: "2020-2025" of "2023, 2024"
+jaren = "2020-2025"
+
+# Periode rond de jaarwisseling (dag-maand), beide dagen tellen mee.
+periode_van = "27-12"
+periode_tot = "07-01"
+
+# Seconden wachten tussen elk verzoek. Niet lager dan 1 zetten.
+wachttijd = 1.5
+
+# Volledige artikeltekst opslaan? Standaard nee vanwege de AVG.
+volledige_tekst_opslaan = false
+
+# Map voor de resultaten.
+uitvoermap = "data"
+
+
+# ---------------------------------------------------------------------
+#  Websites
+#  Naam = adres. Werkt met nieuwssites die op WordPress draaien.
+#  Is een site geen WordPress, dan meldt de scraper dat netjes.
+#  Een website weghalen? Zet een # voor de regel.
+# ---------------------------------------------------------------------
+[websites]
+"112vdg" = "https://112vdg.nl"
+# "voorbeeld" = "https://www.voorbeeldnieuws.nl"
+
+
+# ---------------------------------------------------------------------
+#  Zoeken
+# ---------------------------------------------------------------------
+[zoeken]
+# Deze woorden worden op de website gezocht.
+zoektermen = ["vuurwerk", "jaarwisseling", "oudejaarsnacht", "oud en nieuw", "nieuwjaarsnacht"]
+
+# Een artikel is pas relevant als het een woord uit 'onderwerp'
+# EN een woord uit 'schade' bevat.
+onderwerp = ["*vuurwerk*", "jaarwisseling*", "oudejaars*", "oud en nieuw", "nieuwjaar*"]
+schade = ["schade*", "*schadig*", "verniel*", "kapot*", "brandsticht*", "opgeblazen", "herstel*",
+          "repar*", "vervang*", "schoonma*", "opruim*", "*afval*", "in brand", "uitgebrand", "verwoest"]
+
+# Categorieën van de website die geen regio zijn (worden genegeerd).
+geen_regio = ["Uitgelicht", "Provincies", "Binnenland", "Buitenland", "Overig"]
+
+
+# =====================================================================
+#  Deelvragen
+#
+#  Een nieuwe deelvraag toevoegen? Kopieer een blok hieronder en pas aan:
+#    [deelvragen.korte_naam]          korte naam zonder spaties, wordt de kolom in Excel
+#    vraag = "De volledige deelvraag?"
+#    "categorie" = ["zoekwoord", "zoekwoord*"]
+#
+#  Elke categorie wordt geteld: in hoeveel relevante artikelen komt hij voor?
+#  De volgorde hier is ook de volgorde in het rapport.
+# =====================================================================
+
+[deelvragen.objecten]
+vraag = "Welke objecten in de openbare ruimte raken het vaakst beschadigd?"
+"bushokje / abri" = ["bushokje*", "abri*", "wachthuisje*"]
+"afvalbak / prullenbak" = ["prullenba*", "afvalba*", "vuilnisba*"]
+"container / glasbak" = ["*container*", "glasba*", "kliko*"]
+"lantaarnpaal / verlichting" = ["lantaarnpa*", "straatverlichting", "lichtmast*"]
+"verkeersbord / verkeerslicht" = ["verkeersbord*", "verkeerslicht*", "stoplicht*", "verkeerszuil*"]
+"auto / voertuig" = ["auto", "auto's", "autobrand*", "voertuig*", "bestelbus*", "scooter*"]
+"woning / gevel" = ["woning*", "gevel*", "voordeur*", "brievenbus*", "huis"]
+"ruit / glas" = ["ruit", "ruiten", "ramen", "etalage*"]
+"speeltuin / sportveld" = ["speeltoestel*", "speeltuin*", "cruijff court", "voetbalkooi*", "trapveld*"]
+"straatmeubilair" = ["bankje*", "zitbank*", "fietsenrek*", "paaltje*", "hekwerk*"]
+"wegdek / bestrating" = ["wegdek", "asfalt", "bestrating", "straatstenen"]
+"laadpaal" = ["laadpa*"]
+"camera (vernield)" = ["camerapa*", "cameramast*", "camera vernield", "camera's vernield"]
+"gebouw (school, winkel, bedrijf)" = ["school", "basisschool", "bedrijfspand*", "winkel*", "kerk", "gemeentehuis", "supermarkt*"]
+"groen / natuur" = ["boom", "bomen", "plantsoen*", "berm*", "natuurgebied*", "heide"]
+
+[deelvragen.kostensoort]
+vraag = "Welk deel van de kosten betreft schoonmaak en welk deel is reparatie?"
+"schoonmaak" = ["schoonma*", "opruim*", "veegwagen*", "veegdienst*", "*vuurwerkafval*", "reinig*", "afval op straat"]
+"reparatie / herstel" = ["herstel*", "repar*", "vervang*", "verniel*", "kapot*", "*schadig*", "opgeblazen"]
+
+[deelvragen.factoren]
+vraag = "Welke factoren hebben impact op de materiële schade na oudejaarsavond?"
+"illegaal / zwaar vuurwerk" = ["illegaal", "illegale", "cobra*", "nitraat*", "mortier*", "strijker*", "explosief*"]
+"brand" = ["brand", "branden", "in brand", "vlammen", "uitgebrand"]
+"rellen / onrust" = ["rellen", "onrust*", "ongeregeldhe*", "relschop*", "bekogeld"]
+"vuurwerkverbod / vuurwerkvrije zone" = ["vuurwerkverbod*", "vuurwerkvrij*"]
+"alcohol" = ["alcohol*", "dronken", "beschonken"]
+"weer" = ["storm*", "harde wind", "windstoten", "regen"]
+
+[deelvragen.preventie]
+vraag = "Welk deel van de schade wordt door hulpdiensten of politie voorkomen?"
+"aanhouding" = ["aangehouden", "aanhouding*", "opgepakt", "gearresteerd"]
+"inbeslagname vuurwerk" = ["in beslag", "inbeslagname*", "onderschept"]
+"noodbevel / maatregel" = ["noodbevel*", "noodverordening*", "veiligheidsrisicogebied*", "preventief fouilleren"]
+"ME / extra inzet" = ["ME", "mobiele eenheid", "extra inzet", "extra agenten"]
+"cameratoezicht" = ["cameratoezicht", "camerabeelden", "bodycam*"]
+"voorkomen / op tijd geblust" = ["voorkomen", "op tijd geblust", "snel geblust"]
